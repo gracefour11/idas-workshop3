@@ -7,16 +7,18 @@ on:
   workflow_dispatch:
 
 env:
-  # Variables you may want to customize
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-app
-  DEPLOYMENT_NAME: gpt-huggingface
-  CONTAINER_NAME: gptcontainer
-  NAMESPACE: default
+  # Customize these variables
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-app   # Docker Hub repo
+  DEPLOYMENT_NAME: gpt-huggingface                             # Kubernetes Deployment name
+  CONTAINER_NAME: gptcontainer                                 # Container name inside Deployment
+  NAMESPACE: default                                           # Kubernetes namespace
 
 jobs:
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.save_tag.outputs.tag }}   # Job output for image tag
 
     steps:
       - name: Checkout code
@@ -25,39 +27,42 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }} 
+          username: ${{ secrets.DOCKERHUB_USERNAME }}   # Docker Hub username
+          password: ${{ secrets.DOCKERHUB_TOKEN }}      # Docker Hub token
 
       - name: Build Docker image
         run: |
-          docker build -t $IMAGE_NAME:${{ github.sha }} .
+          docker build -t ${{ env.IMAGE_NAME }}:${GITHUB_SHA} .
 
       - name: Push Docker image
         run: |
-          docker push $IMAGE_NAME:${{ github.sha }}
+          docker push ${{ env.IMAGE_NAME }}:${GITHUB_SHA}
 
       - name: Save image tag
-        id: img
-        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+        id: save_tag
+        run: echo "tag=${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   trivy-scan:
     name: Security Scan with Trivy
     runs-on: ubuntu-latest
     needs: build-and-push
-    timeout-minutes: 10
+    timeout-minutes: 10   # 10-minute timeout
 
     steps:
+      - name: Debug image tag
+        run: echo "IMAGE=${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.tag }}"
+
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.tag }}
           format: 'table'
-          exit-code: '0'
+          exit-code: '0'                 # Continue pipeline even if vulnerabilities found
           vuln-type: 'os,library'
           severity: 'HIGH,CRITICAL'
 
   deploy:
-    name: Deploy to Kubernetes
+    name: Deploy to Kubernetes # will fail if use local cluster
     runs-on: ubuntu-latest
     needs: trivy-scan
 
@@ -71,7 +76,7 @@ jobs:
       - name: Load kubeconfig
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config   # <-- Secret: your kubeconfig content
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config   # Your kubeconfig secret
 
       - name: Update Deployment image
         run: |
