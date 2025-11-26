@@ -62,7 +62,7 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
   deploy:
-    name: Deploy to Kubernetes # will fail if use local cluster
+    name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: trivy-scan
 
